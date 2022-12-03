@@ -22,7 +22,6 @@ class Scene():
         print("Load Scene")
 
     def Render(self):
-        # print(self.scene_name)
         self.RenderCore(t - self.st, self.draw_l, self.draw_r, self.draw_b, self.draw_t)
 
     @ti.kernel
@@ -45,7 +44,7 @@ class Scene():
                     for j in range(samples):  # width
                         off = ti.Vector([offset[0] * j,  offset[1] * i])
                         dist = self.GetSDF(uv + off, I, t)
-                        col = self.GetColor(uv+off, I, dist, t)
+                        col = self.GetColor(uv + off, I, dist, t)
                         if col.norm() > 0.0:
                             col = combine(pixels[I], col)
                         total_col = total_col + col
@@ -89,62 +88,53 @@ class CircleScene(Scene):
 
     @ti.func
     def GetSDF(self, uv, I, t):
-        if t > 5.0:
+        if t > 5.0 and t < 15.0:
             cnt = perid_time(t-5.0, 4, 2)
             if cnt > 1.0:
                 uv = fract(uv * cnt) - ti.Vector([0.5, 0.5])
-        dist = sdf_sphere(uv, 0.5) + ti.sin(t) * 0.1
+        dist = sdf_sphere(uv, 0.5) + ti.sin(t * 0.5) * 0.1
         return dist
 
     @ti.func
     def GetColor(self, uv, I, dist, t):
         col = ti.Vector([0.0, 0.0, 0.0, 0.0])
         if dist < 0.0:
-            col = render_scale(dist, t * 2.0)
+            col = render_scale(dist, t * 3.0)
         return col
 
 
 @ ti.data_oriented
-class FirstScene(Scene):
+class TaiChiScene(Scene):
     def __init__(self) -> None:
-        super(FirstScene, self).__init__()
-        self.scene_name = "First"
+        super(TaiChiScene, self).__init__()
+        self.scene_name = "TaiChiScene"
         self.multi_samples = False
-        self.dura = 20.0
+        self.dura = 17.0
 
     @ ti.func
     def GetSDF(self, uv, I, t):
-        # dist = sdf_sphere(uv, 0.5)
-
-        # pos = ti.Vector([0.0, 0.0])
-        # size = ti.Vector([0.1, 0.2])
-        # dist = sdf_box(uv + pos, size)
-
-        # tb = 3.14 * 0.9
-        # sc = ti.Vector([ti.sin(tb), ti.cos(tb)])
-        # dist = sdf_arc(uv, sc, 0.4, 0.05)
-
+        rotate_speed = 12.2
         ang = t + ti.sin(t) * 3 + 1.5
-        radius = 0.4 + ti.sin(t * 2.1) * 0.1 + 0.1
-        padding = 0.01 + ti.sin(t * 2.3) * 0.01 + 0.01
-        inner_radius = 0.16 + ti.sin(t * 1.32) * 0.08 + 0.08
-        dist = sdf_taichi(uv, radius, ang, padding, inner_radius)
+        radius = 0.4 + ti.sin(t * rotate_speed) * 0.1 + 0.1
+        padding = 0.02 + ti.sin(t * 2.3) * 0.02 + 0.02
+        inner_radius = 0.16 + ti.sin(t * 2.32) * 0.08 + 0.08
+
+        step = int(ti.floor(t / 3.0))
+        step = step % 6
+        dist = 0.0
+        dist_taichi = sdf_taichi(uv, radius, ang, padding, inner_radius, step)
+        dist_sphere = sdf_sphere(uv, radius)
+        if t < 12.0:
+            dist = dist_taichi
+        elif t >= 12.0 and t < 15.0:
+            dist = mix(dist_taichi, dist_sphere, (t - 12.0) * (1.0 / 3.0))
+        else:
+            dist = dist_sphere
         return dist
 
     @ ti.func
     def GetColor(self, uv, I, dist, t):
-        # col = ti.Vector([0.0, 0.0, 0.0, 0.0])
-        # if dist < 0.0:
-        #     col = ti.Vector([0.78, 0.45, 0.46, 1.0])
-
-        dist = dist * ti.sin(t) * 1.45
-        col = render_grad(dist)
-        col.x = mix(col.x, 1.0, ti.sin(t * 2.3) * 0.9)
-        col.z = mix(col.z, 1.0, ti.cos(t * 3.1) * 0.9)
-        col.y = mix(col.y, 0.0, ti.sin(t * 0.67) * 0.3)
-
-        # col = render_blink(dist, t)
-        # col = render_grad(dist)
+        col = render_scale(dist, t)
         return col
 
     @ ti.func
@@ -158,60 +148,43 @@ class FirstScene(Scene):
 
 
 @ ti.data_oriented
-class SecondScene(Scene):
+class LineScene(Scene):
     def __init__(self) -> None:
-        super(SecondScene, self).__init__()
-        self.scene_name = "Second"
+        super(LineScene, self).__init__()
+        self.scene_name = "LineScene"
+        self.dura = 21.0
 
-    def Render(self):
-        self.RenderCore(t - self.st, self.draw_l, self.draw_r, self.draw_b, self.draw_t)
-
-    @ ti.kernel
-    def RenderCore(self, t: float, left: int, right: int, bot: int, top: int):
-        col = ti.Vector([ti.sin(t), ti.cos(t), ti.sin(t), 0.0]) * 0.5 + ti.Vector([0.5, 0.5, 0.5, 1.0])
-        for I in ti.grouped(ti.ndrange(res[0], res[1])):
-            pixels[I] = col
-
-
-# @ti.data_oriented
-# class ThirdScene(Scene):
-#     def __init__(self) -> None:
-#         super(ThirdScene, self).__init__()
-#         self.scene_name = "ThirdScene"
-
-#     def Render(self):
-#         self.RenderCore(t, self.draw_l, self.draw_r, self.draw_b, self.draw_t)
-
-#     @ti.kernel
-#     def RenderCore(self, t: float, left: int, right: int, bot: int, top: int):
-#         self.DoSome(t)
-
-#     @ti.func
-#     def DoSome(t):
-#         if t > 5.0:
-#             t = t - 5.0
-#             print(t)
-
-
-@ ti.data_oriented
-class BGScene(Scene):
-    def __init__(self) -> None:
-        super(BGScene, self).__init__()
-        self.scene_name = "BGScene"
-        self.border = -0.3
-
-    @ ti.func
+    @ti.func
     def GetSDF(self, uv, I, t):
-        dist = 0.0
-        if uv[1] < self.border:
-            dist = -0.1
+        dist = 10.0
+        dist_sphere = sdf_sphere(uv, 0.5)
+        dist_star = sdf_star(uv, 0.6, 0.5)
+
+        if t < 12.0:
+            cnt = int(perid_time(t, 5, 2) + 1)
+            for l in range(cnt):
+                d = ti.abs(sdf_line(uv, t + math.pi * 1.0 / cnt * l)) - 0.05
+                dist = ti.min(dist, d)
+                if l >= 3:
+                    d = sdf_sphere(uv, 0.5 + ti.sin(t * 4.5) * 0.1 + 0.1)
+                    dist = ti.max(dist, d)
+                if l >= 4:
+                    d = sdf_sphere(uv, 0.5 - ti.sin(t * 4.5) * 0.2 + 0.2)
+                    dist = ti.min(dist, d)
+            if t < 2.0:
+                dist = mix(dist, dist_sphere, convert_0to1_smooth(t - 2.0, 2.0))
+        elif t < 15.0:
+            dist = mix(dist_sphere, dist_star, (t-12.0) * (1.0 / 3.0))
+        elif t < 18.0:
+            dist = ti.max(dist_star, -(dist_sphere + 0.3 + ti. sin(t) * 0.1))
+        else:
+            dist = dist_star
+
         return dist
 
-    @ ti.func
+    @ti.func
     def GetColor(self, uv, I, dist, t):
-        col = ti.Vector(0.0, 0.0, 0.0, 0.0)
-        if dist < 0.0:
-            col = ti.Vector([0.23, 0.34, 0.12, 0.8])
+        col = render_scale(dist, t)
         return col
 
 
@@ -222,13 +195,14 @@ class StarScene(Scene):
         self.rad = 0.5
         self.rf = 0.6
         self.multi_samples = False
+        self.dura = 20
         self.star_init()
 
     def Render(self):
+        self.RenderCore(t - self.st, self.draw_l, self.draw_r, self.draw_b, self.draw_t)
         vel[None].z = -1000 * (1.2 + math.cos(t * math.pi))
         self.step()
         self.paint(t)
-        # self.RenderCore(t - self.st, self.draw_l, self.draw_r, self.draw_b, self.draw_t)
 
     @ti.func
     def RenderCoreStar(self, t, left, right, bot, top, colr, colg, colb, cola):
@@ -264,14 +238,20 @@ class StarScene(Scene):
 
     @ ti.func
     def GetSDF(self, uv, I, t):
-        dist = sdf_star(uv, self.rf, self.rad)
+        dist_star = sdf_star(uv, self.rf, self.rad)
+        dist_sphere = sdf_sphere(uv, self.rad)
+        dist = 0.0
+        if t < 5.0:
+            dist = dist_star
+        elif t >= 5.0 and t < 13.0:
+            dist = mix(dist_star, dist_sphere, ti.sin((t - 5.0) * math.pi * 0.5) * 0.5 + 0.5)
+        else:
+            dist = dist_star
         return dist
 
     @ ti.func
-    def GetColor(self, uv, I, dist, t, col):
-        col = ti.Vector([0.0, 0.0, 0.0, 0.0])
-        if dist < 0.0:
-            col = ti.Vector([0.7 + ti.sin(t * 8.03) * 0.3, 0.9 * ti.sin(dist * 2 + 1.0), 0.7, 1.0])
+    def GetColor(self, uv, I, dist, t):
+        col = render_scale(dist, t)
         return col
 
     @ ti.func
@@ -284,10 +264,6 @@ class StarScene(Scene):
 
     @ ti.kernel
     def paint(self, t: float):
-        super(StarScene, self).RenderCore()
-        bg_col = ti.Vector([0.8, 0.7, 0.5, 1.0])
-        self.draw_star(ti.Vector([res[0]//2, res[1]//2]), 200.0, t, bg_col)
-
         for I in ti.grouped(pos):
             rad = 10.0 * (1.0 - pos[I].z / z_far)**2
             cur_p = pos[I]
@@ -330,16 +306,142 @@ class StarScene(Scene):
 
 
 @ ti.data_oriented
+class TreeScene(Scene):
+    def __init__(self) -> None:
+        super(TreeScene, self).__init__()
+        self.scene_name = "TreeScene"
+
+    @ ti.func
+    def GetSDF(self, uv, I, t):
+        dist_star = sdf_star(uv, 0.6, 0.5)
+        rad = 0.5
+        ang = -60 / 180.0 * math.pi
+        p0 = ti.Vector([0.0, rad])
+        p1 = ti.Vector([rad * ti.cos(ang), rad * ti.sin(ang)])
+        p2 = ti.Vector([-rad * ti.cos(ang), rad * ti.sin(ang)])
+        dist_tri1 = sdf_tri(uv, p0, p1, p2)
+        p0 = ti.Vector([0.0, 0.45])
+        p1 = ti.Vector([0.18, 0.18])
+        p2 = ti.Vector([-0.18, 0.18])
+        dist_tri2 = sdf_tri(uv, p0, p1, p2)
+        dist_tree = sdf_tree(uv)
+
+        dist = 0.0
+        if t < 1.0:
+            dist = dist_star
+        elif t >= 1.0 and t < 5.0:
+            dist = mix(dist_star, dist_tri1, convert_0to1_smooth(t - 1.0, 4.0))
+        elif t >= 5.0 and t < 7.0:
+            dist = dist_tri1
+        elif t >= 7.0 and t < 12.0:
+            dist = mix(dist_tri1, dist_tree, convert_0to1_smooth(t - 7.0, 5.0))
+        else:
+            dist = dist_tree
+        return dist
+
+    @ ti.func
+    def GetColor(self, uv, I, dist, t):
+        col = render_scale(dist, t)
+        return col
+
+
+@ti.data_oriented
+class FulidScene(Scene):
+    def __init__(self) -> None:
+        super(FulidScene, self).__init__()
+        self.dura = 30
+
+    @ti.func
+    def GetSDF(self, uv, I, t):
+        dist_tree = sdf_tree(uv)
+        dist_sphere1 = sdf_sphere(uv - ti.Vector([0.0, 0.1]), 0.4)
+        dist_sphere2 = sdf_sphere(uv + ti.Vector([0.0, 0.1]), 0.2)
+        dist_egg = sdf_egg(uv + ti.Vector([0.0, 0.25]), 0.20, 0.09)
+        dist_heart = sdf_heart(uv * 2.0 + ti.Vector([0.0, 0.5]))
+
+        dist = 0.0
+        combine_time = 3.0
+
+        # NOTE : I am not familiar with taichi variable, is list or vector like "x = [...]"?
+        if t >= 0.0 and t < 2.0:
+            dist = dist_tree
+        elif t >= 2.0 and t < 5.0:
+            dist = mix(dist_tree, dist_sphere1, convert_0to1_smooth(t - 2.0, combine_time))
+        elif t >= 5.0 and t < 7.0:
+            dist = dist_sphere1
+        elif t >= 7.0 and t < 10.0:
+            dist = mix(dist_sphere1, dist_egg, convert_0to1_smooth(t - 7.0, combine_time))
+        elif t >= 10.0 and t < 12.0:
+            dist = dist_egg
+        elif t >= 12.0 and t < 15.0:
+            dist = mix(dist_egg, dist_heart, convert_0to1_smooth(t - 12.0, combine_time))
+        elif t >= 15.0 and t < 17.0:
+            dist = dist_heart
+        elif t >= 17.0 and t < 20.0:
+            dist = mix(dist_heart, dist_sphere2, convert_0to1_smooth(t - 17.0, combine_time))
+        elif t >= 20.0 and t < 22.0:
+            dist = dist_sphere2
+        elif t >= 22.0 and t < 25.0:
+            dist = mix(dist_sphere2, dist_tree, convert_0to1_smooth(t - 22.0, combine_time))
+        else:
+            # cnt = tooth((t - 25.0) * 0.2) * 4.0 + 1.0
+            # uv = fract(uv * cnt) - ti.Vector([0.5, 0.5])
+            # dist = sdf_tree(uv)
+            dist = dist_tree
+
+        return dist
+
+    @ti.func
+    def GetColor(self, uv, I, dist, t):
+        col = render_scale(dist, t)
+        return col
+
+
+@ti.data_oriented
+class MultiCircleScene(Scene):
+    def __init__(self) -> None:
+        super(MultiCircleScene, self).__init__()
+
+    @ti.func
+    def GetSDF(self, uv, I, t):
+        # dist = 100.0
+        # for i in range(10):
+        #     rad = fract(i * 0.1 + t * 0.12)
+        #     d = sdf_multi_circle(uv, rad)
+        #     dist = ti.min(dist, d)
+        # return dist
+
+        dist = 100.0
+        dist = sdf_flower(uv)
+        return dist
+
+    @ti.func
+    def GetColor(self, uv, I, dist, t):
+        # col1 = render_grad(dist)
+        # col2 = render_black(dist, uv)
+        # col = mix(col1, col2, 1.0 - uv.norm())
+        # return col
+        # return col2
+        col = render_total_black(dist)
+        return col
+
+
+@ ti.data_oriented
 class Movie():
     def __init__(self) -> None:
         # add all frames
         self.frames = []
         self.frames.append(CircleScene())
-        self.frames.append(FirstScene())
-        # self.frames.append(SecondScene())
-        # self.frames.append(ThirdScene())
-        # self.frames.append(StarScene())
-        sum_t = 0.0  # modified frame dura.
+        self.frames.append(TaiChiScene())
+        self.frames.append(LineScene())
+        self.frames.append(StarScene())
+        self.frames.append(TreeScene())
+        self.frames.append(FulidScene())
+        # self.frames.append(MultiCircleScene())
+
+        self.sum_t = 0.0  # modified frame dura.
+        # self.play_music = False
+        self.play_music = True
 
         # load music
         self.music_files = [
@@ -354,9 +456,9 @@ class Movie():
 
         # modified start and end time
         for frame in self.frames:
-            frame.st = frame.st + sum_t
-            frame.ed = frame.st + frame.dura + sum_t
-            sum_t = sum_t + frame.dura
+            frame.st = frame.st + self.sum_t
+            frame.ed = frame.st + frame.dura
+            self.sum_t = self.sum_t + frame.dura
         self.gui = ti.GUI("why coding?", res, fast_gui=True)
 
     @ ti.kernel
@@ -377,12 +479,14 @@ class Movie():
         frame = self.frames[cur_frame]
         print("Current frame : ", frame.scene_name, frame.st, frame.ed)
 
-        _thread.start_new_thread(PlayMusic, ("Music-1", self.music[0][:10000]))
+        if self.play_music:
+            _thread.start_new_thread(PlayMusic, ("Music-1", self.music[1][:120000]))
 
         while self.gui.running:
             if self.gui.get_event(ti.GUI.ESCAPE):
                 self.gui.running = False
             t = t + dt
+            # print(t)
             if t >= frame.ed and cur_frame < (len(mov.frames)-1):
                 cur_frame = cur_frame + 1
                 frame = self.frames[cur_frame]

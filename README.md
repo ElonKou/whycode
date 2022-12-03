@@ -4,6 +4,12 @@
 
 Install and Use
 ```bash
+# insatll ffplay [ffmpeg]
+# ubuntu
+sudo apt-get install ffmpeg
+# mac
+brew insatll ffmpeg
+
 # clone code
 git clone https://github.com/ElonKou/whycode
 
