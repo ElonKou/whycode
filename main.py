@@ -2,16 +2,17 @@
 # -*- coding: utf-8 -*-
 
 from ticore import *
+import _thread
 
 
 @ti.data_oriented
 class Scene():
     def __init__(self) -> None:
         self.scene_name = "default"
-        self.dura = 5.0
-        self.st = 0.0
-        self.ed = self.st + self.dura
-        self.multi_samples = True  # [2x2] samples per pixel
+        self.dura = 15.0              # [seconds]
+        self.st = 0.0                 # start time
+        self.ed = 0.0                 # end time
+        self.multi_samples = True     # if use multi-sample, render will sample [2x2] points per pixel.
         self.draw_l = 0
         self.draw_r = res[0]
         self.draw_b = 0
@@ -76,7 +77,31 @@ class Scene():
 
     @ ti.kernel
     def Clear(self):
-        pass
+        for I in ti.grouped(ti.ndrange(res[0], res[1])):
+            pixels[I] = clear_color
+
+
+@ti.data_oriented
+class CircleScene(Scene):
+    def __init__(self) -> None:
+        super(CircleScene, self).__init__()
+        self.scene_name = "CircleScene"
+
+    @ti.func
+    def GetSDF(self, uv, I, t):
+        if t > 5.0:
+            cnt = perid_time(t-5.0, 4, 2)
+            if cnt > 1.0:
+                uv = fract(uv * cnt) - ti.Vector([0.5, 0.5])
+        dist = sdf_sphere(uv, 0.5) + ti.sin(t) * 0.1
+        return dist
+
+    @ti.func
+    def GetColor(self, uv, I, dist, t):
+        col = ti.Vector([0.0, 0.0, 0.0, 0.0])
+        if dist < 0.0:
+            col = render_scale(dist, t * 2.0)
+        return col
 
 
 @ ti.data_oriented
@@ -85,11 +110,10 @@ class FirstScene(Scene):
         super(FirstScene, self).__init__()
         self.scene_name = "First"
         self.multi_samples = False
+        self.dura = 20.0
 
     @ ti.func
     def GetSDF(self, uv, I, t):
-        uv = fract(uv * 2.0) - ti.Vector([0.5, 0.5])
-        dist = sdf_sphere(uv, 0.5) + ti.sin(t) * 0.1
         # dist = sdf_sphere(uv, 0.5)
 
         # pos = ti.Vector([0.0, 0.0])
@@ -100,11 +124,11 @@ class FirstScene(Scene):
         # sc = ti.Vector([ti.sin(tb), ti.cos(tb)])
         # dist = sdf_arc(uv, sc, 0.4, 0.05)
 
-        # ang = t + ti.sin(t) * 3 + 1.5
-        # radius = 0.4 + ti.sin(t * 2.1) * 0.1 + 0.1
-        # padding = 0.01 + ti.sin(t * 2.3) * 0.01 + 0.01
-        # inner_radius = 0.16 + ti.sin(t * 1.32) * 0.08 + 0.08
-        # dist = sdf_taichi(uv, radius, ang, padding, inner_radius)
+        ang = t + ti.sin(t) * 3 + 1.5
+        radius = 0.4 + ti.sin(t * 2.1) * 0.1 + 0.1
+        padding = 0.01 + ti.sin(t * 2.3) * 0.01 + 0.01
+        inner_radius = 0.16 + ti.sin(t * 1.32) * 0.08 + 0.08
+        dist = sdf_taichi(uv, radius, ang, padding, inner_radius)
         return dist
 
     @ ti.func
@@ -243,24 +267,26 @@ class StarScene(Scene):
         dist = sdf_star(uv, self.rf, self.rad)
         return dist
 
-    # @ ti.func
-    # def GetColor(self, uv, I, dist, t, col):
-    #     col = ti.Vector([0.0, 0.0, 0.0, 0.0])
-    #     if dist < 0.0:
-    #         col = ti.Vector([0.7 + ti.sin(t * 8.03) * 0.3, 0.9 * ti.sin(dist * 2 + 1.0), 0.7, 1.0])
-    #     return col
+    @ ti.func
+    def GetColor(self, uv, I, dist, t, col):
+        col = ti.Vector([0.0, 0.0, 0.0, 0.0])
+        if dist < 0.0:
+            col = ti.Vector([0.7 + ti.sin(t * 8.03) * 0.3, 0.9 * ti.sin(dist * 2 + 1.0), 0.7, 1.0])
+        return col
 
     @ ti.func
     def draw_star(self, c_pos, radius, t, col):
-        left = max(int(c_pos.x - radius - 1.0), 0)
-        right = min(int(c_pos.x + radius + 1.0), res[0])
-        bot = max(int(c_pos.y - radius - 1.0), 0)
-        top = min(int(c_pos.y + radius + 1.0), res[1])
+        left = ti.max(int(c_pos.x - radius - 1.0), 0)
+        right = ti.min(int(c_pos.x + radius + 1.0), res[0])
+        bot = ti.max(int(c_pos.y - radius - 1.0), 0)
+        top = ti.min(int(c_pos.y + radius + 1.0), res[1])
         self.RenderCoreStar(t - self.st, left, right, bot, top, col[0], col[1], col[2], col[3])
 
     @ ti.kernel
     def paint(self, t: float):
-        # self.draw_star(ti.Vector([res[0]//2, res[1]//2]), 100.0, t)
+        super(StarScene, self).RenderCore()
+        bg_col = ti.Vector([0.8, 0.7, 0.5, 1.0])
+        self.draw_star(ti.Vector([res[0]//2, res[1]//2]), 200.0, t, bg_col)
 
         for I in ti.grouped(pos):
             rad = 10.0 * (1.0 - pos[I].z / z_far)**2
@@ -280,7 +306,7 @@ class StarScene(Scene):
             pixels[I] = ti.Vector([0.83, 0.83, 0.83, 1.0]) * pixels[I]
 
     @ti.kernel
-    def step():
+    def step(self):
         for I in ti.grouped(pos):
             pos[I] += vel[None] * dt
             if pos[I].z < z_near:
@@ -288,39 +314,48 @@ class StarScene(Scene):
                 pos[I].x = vel[None].z * ti.cos(pos[I].x)
 
     @ti.kernel
-    def star_init():
+    def star_init(self):
         for I in ti.grouped(pos):
             pos[I] = (I + rand3()) * grid_size
             pos[I].z += z_near
             color[I] = rand3() + ti.Vector([1.0, 2.0, 3.0])
 
     @ti.func
-    def project(pos_3d):
+    def project(self, pos_3d):
         center = ti.Vector(res) / 2
         w = tan_half_fov * pos_3d.z
         res_pos = (ti.Vector([pos_3d.x, pos_3d.y]) - center) / w
         screen_pos = res_pos * res[1] + center
         return screen_pos
 
-    @ ti.kernel
-    def Clear(self):
-        for I in ti.grouped(ti.ndrange(res[0], res[1])):
-            pixels[I] = clear_color
-
 
 @ ti.data_oriented
 class Movie():
     def __init__(self) -> None:
+        # add all frames
         self.frames = []
+        self.frames.append(CircleScene())
         self.frames.append(FirstScene())
         # self.frames.append(SecondScene())
         # self.frames.append(ThirdScene())
         # self.frames.append(StarScene())
-        # self.bg_frame = BGScene()
         sum_t = 0.0  # modified frame dura.
+
+        # load music
+        self.music_files = [
+            "./music/" + "dubstep-drum-solo-140bpm-by-prettysleepy-art-15454.mp3",
+            "./music/" + "Dynamic-good-electronic-music.mp3",
+            "./music/" + "electronic-drum-loop-by-prettysleepy-art-12918.mp3"
+        ]
+        self.music = []
+        for mf in self.music_files:
+            song = AudioSegment.from_mp3(mf)
+            self.music.append(song)
+
+        # modified start and end time
         for frame in self.frames:
             frame.st = frame.st + sum_t
-            frame.ed = frame.ed + sum_t
+            frame.ed = frame.st + frame.dura + sum_t
             sum_t = sum_t + frame.dura
         self.gui = ti.GUI("why coding?", res, fast_gui=True)
 
@@ -337,10 +372,13 @@ class Movie():
 
     def Play(self):
         global t
-        print("Start")
+        print("Start movie")
         cur_frame = 0
         frame = self.frames[cur_frame]
-        print(frame.scene_name, frame.st, frame.ed)
+        print("Current frame : ", frame.scene_name, frame.st, frame.ed)
+
+        _thread.start_new_thread(PlayMusic, ("Music-1", self.music[0][:10000]))
+
         while self.gui.running:
             if self.gui.get_event(ti.GUI.ESCAPE):
                 self.gui.running = False
@@ -350,7 +388,6 @@ class Movie():
                 frame = self.frames[cur_frame]
                 print(frame.scene_name, frame.st, frame.ed)
             frame.Render()
-            # self.bg_frame.Render()
             mov.Copy()
             self.gui.set_image(pixels_dis)
             self.gui.show()

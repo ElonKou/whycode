@@ -1,10 +1,13 @@
 # !/bin/env python3
 # -*- coding: utf-8 -*-
+# library for some shader functions.
 
 import os
 import time
 import math
 import taichi as ti
+from pydub import AudioSegment
+from pydub.playback import play
 
 
 ti.init(arch=ti.gpu, default_ip=ti.i32, default_fp=ti.f32)
@@ -27,6 +30,13 @@ N = (res[0]//grid_size, res[1]//grid_size, (z_far - z_near) // grid_size)
 pos = ti.Vector.field(n=3, dtype=float, shape=N)
 color = ti.Vector.field(n=3, dtype=float, shape=N)
 vel = ti.Vector.field(n=3, dtype=float, shape=())
+
+
+# ================================================music================================================
+def PlayMusic(threadName,  music):
+    print("Start play " + threadName)
+    play(music)
+    print("End play " + threadName)
 
 
 @ti.func
@@ -195,11 +205,11 @@ def sdf_taichi(pos, radius, ang, padding=0.01, inner_radius=0.2):
     d0 = sdf_sphere(pos + sub_offset, radius * 0.5)
     dl = sdf_line(pos, ang)
 
-    dist0 = max(min(max(d, dl - padding), d0), -d1) + padding
-    dist1 = max(min(max(d, -dl - padding), d1), -d0) + padding
-    dist = min(dist0, dist1)
-    dist = max(dist, -(d0 + inner_radius))
-    dist = max(dist, -(d1 + inner_radius))
+    dist0 = ti.max(ti.min(ti.max(d, dl - padding), d0), -d1) + padding
+    dist1 = ti.max(ti.min(ti.max(d, -dl - padding), d1), -d0) + padding
+    dist = ti.min(dist0, dist1)
+    dist = ti.max(dist, -(d0 + inner_radius))
+    dist = ti.max(dist, -(d1 + inner_radius))
     return dist
 
 
@@ -213,7 +223,7 @@ outer_col = ti.Vector([0.65, 0.35, 0.76])
 
 
 @ti.func
-def render_grad(dist):
+def render_grad(dist, cnt=350):
     # ref: https://github.com/ElonKou/biulab/blob/master/shaders/shadertoy/sdf2d1.fs
     col = ti.Vector([0.0, 0.0, 0.0])
     if (dist < 0.0):
@@ -221,7 +231,7 @@ def render_grad(dist):
     else:
         col = outer_col
     col = col * (1.0 - ti.exp(-6.0 * ti.abs(dist)))
-    col = col * (0.8 + 0.2 * ti.cos(dist * 350))
+    col = col * (0.8 + 0.2 * ti.cos(dist * cnt))
     c = smoothstep(0.0, 0.01, ti.abs(dist))
     col = mix(col, ti.Vector([1.0, 1.0, 1.0]), 1.0 - c)
 
@@ -234,4 +244,42 @@ def render_blink(dist, t):
     col = ti.Vector([0.0, 0.0, 0.0, 0.0])
     if dist < 0.0:
         col = ti.Vector([0.7 + ti.sin(t * 8.03) * 0.3, 0.9 * ti.sin(dist * 2 + 1.0), 0.7, 1.0])
+    return col
+
+
+@ti.func
+def render_scale(dist, t):
+    dist = dist * ti.sin(t) * 1.45
+    col = render_grad(dist, 250)
+    col.x = mix(col.x, 1.0, ti.sin(t * 2.3) * 0.9)
+    col.z = mix(col.z, 1.0, ti.cos(t * 3.1) * 0.9)
+    col.y = mix(col.y, 0.0, ti.sin(t * 0.67) * 0.3)
+    return col
+
+
+@ti.func
+def fade_in(t, offset=1.0):
+    return ti.min(ti.exp(t + offset), t)
+
+
+@ti.func
+def perid_time(x, up=1.0, dura=2.0):
+    # |  ____
+    # |/______\__
+
+    scale = dura + up * 2.0
+    ret = fract(x / scale) * scale
+    ret = ti.min(ret, scale - ret)
+    ret = ti.min(ret, up)
+    return ret
+
+
+@ti.func
+def render_in(dist, t):
+    c = fade_in(t)
+    dist = dist * ti.sin(c) * 1.45
+    col = render_grad(dist, min(c * 13, 250))
+    col.x = mix(col.x, 1.0, ti.sin(c * 2.3) * 0.9)
+    col.z = mix(col.z, 1.0, ti.cos(c * 3.1) * 0.9)
+    col.y = mix(col.y, 0.0, ti.sin(c * 0.67) * 0.3)
     return col
