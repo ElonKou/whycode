@@ -1,5 +1,9 @@
 # !/bin/env python3
 # -*- coding: utf-8 -*-
+# @Time    : 2022.12.04
+# @Author  : elonkou
+# @File    : main.py
+# Contains all Scenes / Movie for render.
 
 from ticore import *
 import _thread
@@ -26,7 +30,6 @@ class Scene():
 
     @ti.kernel
     def RenderCore(self, t: float, left: int, right: int, bot: int, top: int):
-        # for I in ti.grouped(ti.ndrange(res[0], res[1])):
         for I in ti.grouped(ti.ndrange((left, right), (bot, top))):
             width = right - left
             height = top - bot
@@ -401,28 +404,76 @@ class FulidScene(Scene):
 class MultiCircleScene(Scene):
     def __init__(self) -> None:
         super(MultiCircleScene, self).__init__()
+        self.dura = 25.0
 
     @ti.func
     def GetSDF(self, uv, I, t):
-        # dist = 100.0
-        # for i in range(10):
-        #     rad = fract(i * 0.1 + t * 0.12)
-        #     d = sdf_multi_circle(uv, rad)
-        #     dist = ti.min(dist, d)
-        # return dist
-
         dist = 100.0
-        dist = sdf_flower(uv)
+        dis_circle = 100.0
+
+        dis_tree = sdf_tree(uv)
+        for i in range(10):
+            rad = fract(i * 0.1 + t * 0.12)
+            d = sdf_multi_circle(uv, rad)
+            dis_circle = ti.min(dis_circle, d)
+        dist_flower = sdf_flower(uv, t)
+        dis_sph = sdf_sphere(uv, 0.5)
+
+        if t < 2.0:
+            dist = dis_tree
+        elif t >= 2.0 and t < 5.0:
+            dist = mix(dis_tree, dis_circle, convert_0to1_smooth(t - 2.0, 3.0))
+        elif t >= 5.0 and t < 10.0:
+            dist = dis_circle
+        elif t >= 10.0 and t < 15.0:
+            dist = mix(dis_circle, dist_flower, convert_0to1_smooth(t - 10.0, 5.0))
+        elif t >= 15.0 and t < 20.0:
+            dist = dist_flower
+        elif t >= 20.0 and t < 25.0:
+            dist = mix(dist_flower, dis_sph, convert_0to1_smooth(t - 20.0, 5.0))
+        else:
+            dist = dis_sph
         return dist
 
     @ti.func
     def GetColor(self, uv, I, dist, t):
-        # col1 = render_grad(dist)
-        # col2 = render_black(dist, uv)
-        # col = mix(col1, col2, 1.0 - uv.norm())
-        # return col
-        # return col2
-        col = render_total_black(dist)
+        col2 = render_scale(dist, t)
+        col3 = render_black(dist, uv)
+        col = ti.Vector([0.0, 0.0, 0.0, 0.0])
+        if t < 2.0:
+            col = col2
+        elif t >= 2.0 and t < 5.0:
+            col = mix(col2, col3, convert_0to1_smooth(t - 2.0, 3.0))
+        elif t >= 5.0 and t < 10.0:
+            col = col3
+        elif t >= 10.0 and t < 15.0:
+            col = mix(col3, col2, convert_0to1_smooth(t - 10.0, 5.0))
+        elif t >= 15.0:
+            col = col2
+        return col
+
+
+@ti.data_oriented
+class AnimalScene(Scene):
+    def __init__(self) -> None:
+        super(AnimalScene, self).__init__()
+
+    @ti.func
+    def GetSDF(self, uv, I, t):
+        dist_sph = sdf_sphere(uv, 0.5)
+        dist_animal = sdf_animal(uv)
+        dist = 0.0
+        if t < 3.0:
+            dist = dist_sph
+        elif t >= 3.0 and t < 11.0:
+            dist = mix(dist_sph, dist_animal, convert_whole_smooth(t - 3.0, 8.0 / 3 * 2))
+        else:
+            dist = dist_animal
+        return dist
+
+    @ti.func
+    def GetColor(self, uv, I, dist, t):
+        col = render_scale(dist, t)
         return col
 
 
@@ -437,10 +488,11 @@ class Movie():
         self.frames.append(StarScene())
         self.frames.append(TreeScene())
         self.frames.append(FulidScene())
-        # self.frames.append(MultiCircleScene())
+        self.frames.append(MultiCircleScene())
+        self.frames.append(AnimalScene())
 
         self.sum_t = 0.0  # modified frame dura.
-        # self.play_music = False
+        self.play_music = False
         self.play_music = True
 
         # load music
@@ -480,7 +532,7 @@ class Movie():
         print("Current frame : ", frame.scene_name, frame.st, frame.ed)
 
         if self.play_music:
-            _thread.start_new_thread(PlayMusic, ("Music-1", self.music[1][:120000]))
+            _thread.start_new_thread(PlayMusic, ("Music-1", self.music[1][:173000]))
 
         while self.gui.running:
             if self.gui.get_event(ti.GUI.ESCAPE):
@@ -490,7 +542,7 @@ class Movie():
             if t >= frame.ed and cur_frame < (len(mov.frames)-1):
                 cur_frame = cur_frame + 1
                 frame = self.frames[cur_frame]
-                print(frame.scene_name, frame.st, frame.ed)
+                print("Current frame : ", frame.scene_name, frame.st, frame.ed)
             frame.Render()
             mov.Copy()
             self.gui.set_image(pixels_dis)

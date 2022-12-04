@@ -1,6 +1,9 @@
 # !/bin/env python3
 # -*- coding: utf-8 -*-
-# library for some shader functions.
+# @Time    : 2022.12.04
+# @Author  : elonkou
+# @File    : ticore.py
+# Library for some shader functions.
 
 import os
 import time
@@ -27,7 +30,7 @@ clear_color = ti.Vector([0.12, 0.12, 0.12, 1.0])
 # ================================================star================================================
 fov = 120
 tan_half_fov = math.tan(fov / 360 * math.pi)
-z_near, z_far, grid_size = 200, 3200, 80
+z_near, z_far, grid_size = 200, 4200, 120
 N = (res[0]//grid_size, res[1]//grid_size, (z_far - z_near) // grid_size)
 pos = ti.Vector.field(n=3, dtype=float, shape=N)
 color = ti.Vector.field(n=3, dtype=float, shape=N)
@@ -101,18 +104,18 @@ def dot2(x):
 
 @ti.func
 def Union(d1, d2):
-    return min(d1, d2)
+    return ti.min(d1, d2)
 
 
 @ti.func
 def Subtraction(d1, d2):
     # return max(-d1, d2) # maybe has erro.
-    return max(d1, -d2)
+    return ti.max(d1, -d2)
 
 
 @ti.func
 def Intersection(d1, d2):
-    return max(d1, d2)
+    return ti.max(d1, d2)
 
 
 @ti.func
@@ -140,7 +143,9 @@ def convert_0to1_smooth(x, maxv=1.0):
 
 @ti.func
 def convert_whole_smooth(x, maxv=1.0):
-    return ti.sin(x / maxv * math.pi * 2.0)  # return [0, 1, 0, -1, 0] with sin smooth
+    # return [0, 1, 0, -1, 0] with sin smooth
+    # return [0, 1, 0, -1, 0] with sin smooth
+    return ti.abs(ti.sin(x / maxv * math.pi))
 
 
 @ti.func
@@ -189,6 +194,18 @@ def sdf_star(uv, rf, rad):
 @ti.func
 def sdf_sphere(uv, rad):
     return uv.norm() - rad
+
+
+@ti.func
+def sdf_verica(p, r, d):
+    p = ti.abs(p)
+    b = ti.sqrt(r * r - d * d)
+    dist = 0.0
+    if (p.y - b) * d > p.x * b:
+        dist = (p - ti.Vector([0.0, b])).norm()
+    else:
+        dist = (p - ti.Vector([-d, 0.0])).norm() - r
+    return dist
 
 
 @ti.func
@@ -313,6 +330,69 @@ def sdf_egg(p, ra, rb):
 
 
 @ti.func
+def sdf_trape(pos, r1, r2, he):
+    k1 = ti.Vector([r2, he])
+    k2 = ti.Vector([r2 - r1, 2.0 * he])
+    pos.x = ti.abs(pos.x)
+
+    r = 0.0
+    if pos.y < 0.0:
+        r = r1
+    else:
+        r = r2
+    ca = ti.Vector([pos.x - ti.min(pos.x, r), ti.abs(pos.y) - he])
+    cb = pos - k1 + k2 * clamp((k1 - pos).dot(k2) / dot2(k2), 0.0, 1.0)
+    s = 0.0
+    if cb.x < 0.0 and ca.y < 0.0:
+        s = -1.0
+    else:
+        s = 1.0
+    dist = s * ti.sqrt(ti.min(dot2(ca), dot2(cb)))
+    return dist
+
+
+@ti.func
+def sdf_animal(uv):
+    head_pos = uv - ti.Vector([0.0, 0.23])
+    dist_face = sdf_egg(ti.Vector([uv[0], uv[1] * 1.4]) - ti.Vector([0.0, 0.23]), 0.21, 0.15)
+    p0 = ti.Vector([-0.16, 0.22])
+    p4 = ti.Vector([-0.10, 0.22])
+    p1 = ti.Vector([-0.16, 0.01])
+    p2 = ti.Vector([-0.10, 0.01])
+    head_pos.x = ti.abs(head_pos.x)
+    dist_tri1 = sdf_tri(head_pos, p0, p1, p2)
+    dist_tri2 = sdf_tri(head_pos, p4, p1, p2)
+    dist_tri3 = sdf_tri(head_pos, ti.Vector([-p0.x, p0.y]), ti.Vector([-p1.x, p1.y]), ti.Vector([-p2.x, p2.y]))
+    dist_tri4 = sdf_tri(head_pos, ti.Vector([-p4.x, p4.y]), ti.Vector([-p1.x, p1.y]), ti.Vector([-p2.x, p2.y]))
+
+    dist_ear = ti.min(ti.min(dist_tri1, dist_tri2), ti.min(dist_tri3, dist_tri4))
+
+    eye_pos = uv
+    eye_pos.y = eye_pos.y * 0.5
+    dist_sphere1 = sdf_sphere(eye_pos - ti.Vector([0.11, 0.09]), 0.02)
+    dist_sphere2 = sdf_sphere(eye_pos - ti.Vector([-0.11, 0.09]), 0.02)
+    dist_eye = ti.min(dist_sphere1, dist_sphere2)
+
+    cloth_pos = uv
+    x_scale = 1.0 - (cloth_pos.y - 0.11)
+    x_scale = ti.abs(pow(x_scale, 2.3))
+    cloth_pos.x = cloth_pos.x * x_scale
+
+    y_scale = cloth_pos.x
+    y_scale = 1.0 - ti.abs(pow(y_scale, 2.0))
+    cloth_pos.y = cloth_pos.y * y_scale
+    cloth_pos.y = cloth_pos.y * y_scale
+
+    cloth_pos = cloth_pos + ti.Vector([0.0, 0.16])
+    dist_cloth = sdf_trape(cloth_pos, 0.24, 0.34, 0.18) - 0.03
+
+    dist = ti.min(dist_face, dist_ear)
+    dist = ti.max(dist, -dist_eye)
+    dist = ti.min(dist, dist_cloth)
+    return dist
+
+
+@ti.func
 def sdf_heart(p):
     dist = 0.0
     p.x = ti.abs(p.x)
@@ -331,8 +411,34 @@ def sdf_multi_circle(uv, radius=0.5, thickness=0.006):
 
 
 @ti.func
-def sdf_flower(uv):
-    pass
+def sdf_wave_sphere(uv, rad, cnt=20, wave=0.01):
+    ang = ti.atan2(uv[1], uv[0])
+    r = uv.norm() + ti.sin(ang * 20) * 0.01
+    uv.x = r * ti.cos(ang)
+    uv.y = r * ti.sin(ang)
+    dist = sdf_sphere(uv, rad)
+    return dist
+
+
+@ti.func
+def sdf_flower(uv, t):
+    sph1 = sdf_sphere(uv, 0.5 + ti.sin(t) * 0.12)
+    sph2 = sdf_sphere(uv, 0.8 + ti.cos(t * 1.4) * 0.12)
+    sph3 = sdf_wave_sphere(uv, 0.2 + ti.cos(2.1) * 0.15)
+
+    dist = Subtraction(sph2, sph1)
+    dist = Union(dist, ti.abs(sph3) - 0.02)
+
+    cnt = 10
+    for i in range(cnt):
+        ang = 2.0 * math.pi / cnt * i
+        radius = 0.45 + ti.cos(t * 1.1) * 0.14
+        sub_uv = ti.Vector([ti.cos(ang), ti.sin(ang)]) * radius
+        dist_sph = sdf_sphere(uv - sub_uv, 0.16 + ti.sin(t * 3.1) * 0.12)
+        dist = Subtraction(dist, dist_sph)
+    sph4 = sdf_wave_sphere(uv, 0.6 + ti.cos(t) * 0.12)
+    dist = Union(dist, ti.abs(sph4) - 0.02)
+    return dist
 
 # ================================================render================================================
 
@@ -381,23 +487,23 @@ def render_black(dist, uv):
         col = mix(col_purple, col_blue, 1.0 - d)
     else:
         col = mix(col_purple, col_blue, 1.0 - d)
-        col[3] = col[3] * max(0.03 - dist, 0.0)
+        col[3] = col[3] * ti.max(0.03 - dist, 0.0)
 
     return col
 
 
 @ti.func
 def render_total_black(dist):
-    white = ti.Vector([0.9, 0.9, 0.9, 1.0])
-    black = ti.Vector([0.02, 0.02, 0.02, 1.0])
-    dist = white
+    black = ti.Vector([0.02, 0.02, 0.02, 0.5])
+    col = ti.Vector([0.9, 0.9, 0.9, 0.5])
     if dist < 0.0:
-        dist = black
-    return dist
+        col = black
+    return col
 
 
 @ti.func
 def render_blink(dist, t):
+    dist = fract(dist * 5.0) * 0.2 - 0.4
     col = ti.Vector([0.0, 0.0, 0.0, 0.0])
     if dist < 0.0:
         col = ti.Vector([0.7 + ti.sin(t * 8.03) * 0.3, 0.9 * ti.sin(dist * 2 + 1.0), 0.7, 1.0])
