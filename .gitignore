@@ -1,3 +1,5 @@
 .vscode/
 **/*.pyc
 some.py
+
+**/.DS_Store

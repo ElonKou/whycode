@@ -551,6 +551,6 @@ class Movie():
 
 
 if __name__ == "__main__":
-    mov = Movie()
+    mov = Movie()  # Movie contains all scenes.
     mov.Init()
     mov.Play()

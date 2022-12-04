@@ -5,6 +5,12 @@
 # @File    : ticore.py
 # Library for some shader functions.
 
+# Reference: 
+# https://iquilezles.org/articles/distfunctions2d/
+# https://zhuanlan.zhihu.com/p/581644801
+# https://zhuanlan.zhihu.com/p/574728205
+# https://www.shadertoy.com/user/iq
+
 import os
 import time
 import math
@@ -18,7 +24,7 @@ ti.init(arch=ti.gpu, default_ip=ti.i32, default_fp=ti.f32)
 # ================================================common================================================
 # res = (960, 540)
 # res = (1920, 1080)
-# res = (2560, 1600)
+# res = (2560, 1600) # If you are using high resolutiond computer/mac.
 res = (2560//2, 1600//2)
 t = 0.0
 fps = 60.0
