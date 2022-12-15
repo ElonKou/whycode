@@ -427,6 +427,21 @@ def sdf_wave_sphere(uv, rad, cnt=20, wave=0.01):
 
 
 @ti.func
+def sdf_fish(uv):
+    dist_eye = sdf_sphere(uv- ti.Vector([-0.4, 0.02]), 0.03)
+    dist_sph1 = sdf_sphere(uv - ti.Vector([-0.2, 0.3]), 0.5)
+    dist_sph2 = sdf_sphere(uv - ti.Vector([-0.2, -0.3]), 0.5)
+    p0 = ti.Vector([0.0, 0.0])
+    p1 = ti.Vector([0.3, 0.25])
+    p2 = ti.Vector([0.3, -0.25])
+    dist_tri = sdf_tri(uv, p0, p1, p2)
+    dist = max(dist_sph1, dist_sph2)
+    dist = max(dist, -dist_eye)
+    dist = min(dist_tri, dist)
+    return dist
+
+
+@ti.func
 def sdf_flower(uv, t):
     sph1 = sdf_sphere(uv, 0.5 + ti.sin(t) * 0.12)
     sph2 = sdf_sphere(uv, 0.8 + ti.cos(t * 1.4) * 0.12)
