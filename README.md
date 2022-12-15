@@ -26,7 +26,6 @@ python3 main.py
 ## Results
 ![](images/img05.png)
 
-动态效果
 ![gear](images/gif_images/1gear.gif)
 ![taichi](images/gif_images/2taichi_rot.gif)
 ![star](images/gif_images/3star.gif)
